@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Karthik Time Converter</title>
+<style>
+    :root {
+        color-scheme: light;
+        --accent: #3b6e8f;
+        --accent-dark: #244a61;
+        --ink: #1f2a30;
+        --muted: #6b777d;
+        --page: #eef1f3;
+        --panel: #ffffff;
+        --line: #d5dde1;
+        --error: #b42318;
+    }
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        padding: 40px 16px;
+        background: var(--page);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        line-height: 1.45;
+    }
+
+    main {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 28px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+    }
+
+    h1 { margin: 0 0 18px; font-size: 20px; font-weight: 700; }
+
+    input {
+        width: 100%;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        font-size: 20px;
+    }
+    input:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(59, 110, 143, 0.25);
+    }
+
+    .hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+
+    #results { margin-top: 20px; }
+
+    .result {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+        font-variant-numeric: tabular-nums;
+    }
+    .result:last-of-type { border-bottom: none; }
+
+    .from { color: var(--muted); font-size: 15px; }
+    .to { font-size: 22px; font-weight: 700; }
+    .exact { color: var(--muted); font-size: 13px; font-weight: 400; margin-left: 6px; }
+
+    .result.total { margin-top: 4px; padding-top: 12px; border-top: 2px solid var(--line); border-bottom: none; }
+    .result.total .from { color: var(--ink); font-weight: 600; }
+
+    .result.bad .to { color: var(--error); font-size: 14px; font-weight: 600; }
+
+    .answer { display: flex; align-items: baseline; gap: 10px; text-align: right; }
+
+    .copy {
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+    }
+    .copy:hover { color: var(--accent-dark); border-color: var(--accent); }
+
+    .note { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+
+    details { margin-top: 24px; font-size: 14px; }
+    summary { cursor: pointer; color: var(--accent-dark); font-weight: 600; }
+
+    table { width: 100%; margin-top: 10px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    td:nth-child(2), th:nth-child(2) { text-align: right; }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+    <h1>Karthik Time Converter</h1>
+
+    <input id="entry" type="text" autocomplete="off" spellcheck="false"
+           placeholder="e.g. .17 or 39 min" aria-label="Decimal hours or minutes" autofocus>
+    <p class="hint">Type a decimal like .17, or time like 39 min or 1:15. Separate several with commas or “and”.</p>
+
+    <div id="results" aria-live="polite"></div>
+
+    <details>
+        <summary>Common conversions</summary>
+        <table>
+            <thead><tr><th>Minutes</th><th>Decimal hours</th></tr></thead>
+            <tbody>
+                <tr><td>6 min</td><td>.10</td></tr>
+                <tr><td>10 min</td><td>.17</td></tr>
+                <tr><td>12 min</td><td>.20</td></tr>
+                <tr><td>15 min</td><td>.25</td></tr>
+                <tr><td>20 min</td><td>.33</td></tr>
+                <tr><td>30 min</td><td>.50</td></tr>
+                <tr><td>40 min</td><td>.67</td></tr>
+                <tr><td>45 min</td><td>.75</td></tr>
+            </tbody>
+        </table>
+    </details>
+</main>
+
+<script>
+"use strict";
+
+const entry = document.getElementById("entry");
+const results = document.getElementById("results");
+
+const H = "(?:h|hr|hrs|hour|hours)";
+const M = "(?:m|min|mins|minute|minutes)";
+
+// Reads one value. Returns { minutes, kind } or null.
+// kind "decimal" = typed as decimal hours; "time" = typed as hours/minutes.
+function parse(text) {
+    const t = text.trim().toLowerCase();
+    let m;
+
+    // Decimal hours: .17, 7.5, 7.50 hrs
+    if ((m = t.match(new RegExp("^(\\d*\\.\\d+|\\d+\\.)\\s*" + H + "?$")))) {
+        return { minutes: Number(m[1]) * 60, kind: "decimal" };
+    }
+    // Clock style: 1:15
+    if ((m = t.match(/^(\d+):(\d{1,2})$/))) {
+        if (Number(m[2]) > 59) return null;
+        return { minutes: Number(m[1]) * 60 + Number(m[2]), kind: "time" };
+    }
+    // Hours with optional minutes: 1h, 1 hr 15, 1h 15m
+    if ((m = t.match(new RegExp("^(\\d+)\\s*" + H + "\\s*(?:(\\d+)\\s*" + M + "?)?$")))) {
+        return { minutes: Number(m[1]) * 60 + Number(m[2] || 0), kind: "time" };
+    }
+    // Minutes: 39 min
+    if ((m = t.match(new RegExp("^(\\d+)\\s*" + M + "$")))) {
+        return { minutes: Number(m[1]), kind: "time" };
+    }
+    // Bare whole number: read as minutes
+    if ((m = t.match(/^(\d+)$/))) {
+        return { minutes: Number(m[1]), kind: "time", assumed: true };
+    }
+    return null;
+}
+
+function hoursAndMinutes(totalMinutes) {
+    let h = Math.floor(totalMinutes / 60);
+    let min = Math.round(totalMinutes - h * 60);
+    if (min === 60) { h += 1; min = 0; }
+    if (h === 0) return min + " min";
+    const hr = h + (h === 1 ? " hr" : " hrs");
+    return min === 0 ? hr : hr + " " + min + " min";
+}
+
+function decimalHours(totalMinutes) {
+    return (totalMinutes / 60).toFixed(2);
+}
+
+function splitInput(text) {
+    // Keep "1 hour and 15 mins" together as one value.
+    const joined = text.replace(
+        new RegExp("(\\d+)\\s*" + H + "\\s+and\\s+(\\d+)\\s*" + M, "gi"), "$1h $2m");
+    return joined.split(/\s*(?:,|;|\+|\n|\band\b)\s*/i).filter(s => s.trim() !== "");
+}
+
+function row(fromText, toText, exactText, extraClass) {
+    const div = document.createElement("div");
+    div.className = "result" + (extraClass ? " " + extraClass : "");
+
+    const from = document.createElement("span");
+    from.className = "from";
+    from.textContent = fromText;
+
+    const answer = document.createElement("span");
+    answer.className = "answer";
+
+    const to = document.createElement("span");
+    to.className = "to";
+    to.textContent = toText;
+    if (exactText) {
+        const exact = document.createElement("span");
+        exact.className = "exact";
+        exact.textContent = exactText;
+        to.appendChild(exact);
+    }
+    answer.appendChild(to);
+
+    if (extraClass !== "bad") {
+        const btn = document.createElement("button");
+        btn.className = "copy";
+        btn.type = "button";
+        btn.textContent = "Copy";
+        btn.addEventListener("click", () => copy(toText, btn));
+        answer.appendChild(btn);
+    }
+
+    div.append(from, answer);
+    return div;
+}
+
+function render() {
+    results.innerHTML = "";
+    const pieces = splitInput(entry.value);
+    if (pieces.length === 0) return;
+
+    let total = 0;
+    let good = 0;
+    let assumed = false;
+
+    pieces.forEach(piece => {
+        const p = parse(piece);
+        if (!p) {
+            results.appendChild(row(piece.trim(), "Couldn’t read this", "", "bad"));
+            return;
+        }
+        good += 1;
+        total += p.minutes;
+        if (p.assumed) assumed = true;
+
+        if (p.kind === "decimal") {
+            const rounded = Math.round(p.minutes);
+            const exact = Math.abs(p.minutes - rounded) > 0.001
+                ? "(" + (Math.round(p.minutes * 10) / 10) + " min)" : "";
+            const label = piece.trim().replace(/\s*(h|hr|hrs|hour|hours)$/i, "");
+            results.appendChild(row(label + " hrs", hoursAndMinutes(p.minutes), exact));
+        } else {
+            results.appendChild(row(hoursAndMinutes(p.minutes), decimalHours(p.minutes)));
+        }
+    });
+
+    if (good >= 2) {
+        results.appendChild(row("Total", decimalHours(total), "(" + hoursAndMinutes(total) + ")", "total"));
+    }
+
+    if (assumed) {
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = "Whole numbers are read as minutes. For hours, type 2h or 2:00.";
+        results.appendChild(note);
+    }
+}
+
+async function copy(text, btn) {
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+    }
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = "Copy"; }, 1200);
+}
+
+entry.addEventListener("input", render);
+</script>
+</body>
+</html>
